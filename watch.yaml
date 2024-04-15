@@ -1,0 +1,980 @@
+esphome:
+  name: watch
+  platformio_options:
+    board_build.flash_mode: dio
+      
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: esp-idf
+    version: recommended
+    sdkconfig_options:
+        CONFIG_ESP32_S3_BOX_BOARD: "y"
+        CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM: "16"
+        CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM: "512"
+        CONFIG_TCPIP_RECVMBOX_SIZE: "512"
+        CONFIG_TCP_SND_BUF_DEFAULT: "65535"
+        CONFIG_TCP_WND_DEFAULT: "512000"
+        CONFIG_TCP_RECVMBOX_SIZE: "512"
+  flash_size: 16MB
+  
+psram:
+  mode: octal
+  speed: 80MHz
+  
+logger:
+  hardware_uart: uart0
+
+# deep_sleep:
+#   id: sleep_1
+#   run_duration: 30s
+#   wakeup_pin: 
+#     number: 16
+#     allow_other_uses: true
+#     inverted: true
+#   wakeup_pin_mode: KEEP_AWAKE
+
+api:
+  on_client_connected:
+    then:
+      - pcf8563.read_time:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - lambda: |-
+                id(api_connection) = true;
+          else:
+            - lambda: |-
+                id(api_connection) = false;
+
+ota:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  on_connect:
+    - lambda: |-
+        id(wifi_connection) = true;
+  on_disconnect:
+    - lambda: |-
+        id(wifi_connection) = false;
+
+time:
+  - platform: pcf8563
+    id: rtc_time
+    i2c_id: general
+    address: 0x51
+    update_interval: never
+
+  - platform: homeassistant
+    on_time_sync:
+      then:
+        pcf8563.write_time:
+      
+i2c:
+  - id: general
+    sda: 10
+    scl: 11
+  - id: tsc
+    sda: 39
+    scl: 40
+ 
+spi:
+  - id: tft
+    clk_pin: GPIO18
+    mosi_pin: GPIO13
+    interface: hardware
+    
+button:
+  - platform: restart
+    name: reboot
+    id: rst_but
+
+remote_transmitter:
+  pin: 2
+  carrier_duty_percent: 50%
+  
+external_components:
+  - source:
+      type: git
+      url: https://github.com/gnumpi/esphome_audio
+      ref: main
+    components: [ adf_pipeline, i2s_audio ]
+    refresh: 0s  
+
+sensor:
+  
+  - platform: homeassistant
+    id: in_set_temp
+    entity_id: climate.house_thermostat
+    attribute: temperature
+    internal: true
+
+  - platform: homeassistant
+    id: liv_temp
+    entity_id: sensor.living_room_temp
+    internal: true
+
+  - platform: homeassistant
+    id: kitch_temp
+    entity_id: sensor.kitchen_temp_ble_temperature
+    internal: true
+ 
+  - platform: uptime
+    name: Uptime Sensor
+
+adf_pipeline:
+  - platform: i2s_audio
+    type: audio_out
+    id: adf_spk
+    i2s_audio_id: i2s_out
+    i2s_dout_pin: GPIO46
+    
+  - platform: i2s_audio
+    type: audio_in
+    id: adf_mic
+    i2s_audio_id: i2s_in
+    i2s_din_pin: GPIO47
+    channel: right
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    pdm: true
+
+microphone:
+  - platform: adf_pipeline
+    id: adf_microphone
+    gain_log2: 3
+    keep_pipeline_alive: false
+    pipeline:
+      - adf_mic
+      - self
+
+media_player:
+  - platform: adf_pipeline
+    id: adf_media_player
+    name: watch player
+    keep_pipeline_alive: false
+    internal: false
+    pipeline:
+      - self
+      - adf_spk
+            
+i2s_audio:
+  - id: i2s_in
+    i2s_lrclk_pin: GPIO44
+  - id: i2s_out
+    i2s_lrclk_pin: GPIO15
+    i2s_bclk_pin: GPIO48
+
+voice_assistant:
+  id: va
+  microphone: adf_microphone
+  media_player: adf_media_player
+  noise_suppression_level: 1
+  volume_multiplier: 4
+  use_wake_word: false
+  on_error:
+    - voice_assistant.stop
+    - display.page.show: home_page 
+  on_end:
+    - display.page.show: home_page
+ 
+output:
+  - platform: ledc
+    pin: GPIO45
+    id: backlight_output
+
+light:
+  - platform: monochromatic
+    id: led
+    name: LCD Backlight
+    entity_category: config
+    output: backlight_output
+    default_transition_length: 500ms
+    restore_mode: RESTORE_AND_ON
+    on_turn_on:
+      - delay: 30s 
+      -  light.turn_off: led
+      - display.page.show: home_page
+               
+globals: 
+  - id: wifi_connection
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: api_connection
+    type: bool
+    restore_value: no
+    initial_value: "false" 
+    
+font:
+  - file: "fonts/consola.ttf"
+    id: my_font3
+    size: 38
+    
+  - file: "fonts/consola.ttf"
+    id: my_font2
+    size: 20
+    
+  - file: "fonts/consola.ttf"
+    id: my_font1
+    size: 24
+   
+  - file: "fonts/consola.ttf"
+    id: my_font4
+    size: 16
+
+  - file: "fonts/consola.ttf"
+    id: my_font
+    size: 14
+
+  - file: "fonts/consola.ttf"
+    id: my_font5
+    size: 30
+
+  - file: "fonts/consola.ttf"
+    id: my_font6
+    size: 40
+     
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: icon_font_25
+    size: 55
+    glyphs: [
+      "\U000F036D",
+      "\U000F036C",
+      "\U000F0079",#battery 100%
+      "\U000F0082",
+      "\U000F0081",
+      "\U000F0080",
+      "\U000F007F",
+      "\U000F007E",
+      "\U000F007D",
+      "\U000F007C",
+      "\U000F007B",
+      "\U000F007A",
+      "\U000F10CD",
+      "\U000F0510",
+      "\U000F050F",
+      "\U000F02DC",
+      "\U000F024A",
+      "\U000F03F5",
+      "\U000F03F6", 
+      "\U000F11AB",
+      "\U000F16BD",#wifi connected
+      "\U000F16BC",#wifidisconnected
+      "\U000F07D0",#api connected
+      "\U000F1247",
+      "\U000F12A8",#touch button
+      "\U000F087B"]#api disconnected
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: icon_font_80
+    size: 70
+    glyphs: [
+      "\U000F1322",#tools
+      "\U000F12D4",#garage open
+      "\U000F12D3",#garage closed
+      "\U000F0238",#heating
+      "\U000F0B2C",#up
+      "\U000F0B26",#down
+      "\U000F024A",#garden
+      "\U000F1987",#floods
+      "\U000F04C8",#spots
+      "\U000F1722",#fire off
+      "\U000F068A",#alarm unarmed
+      "\U000F099D",#alarm armed
+      "\U000F1A12",#home button
+      "\U000F0D90",#monitor_off
+      "\U000F0B28",#left
+      "\U000F192D",#electricity
+      "\U000F1A1B",#gas
+      "\U000F0B6C",#car battery
+      "\U000F0873",#car miles non
+      "\U000F0875",#car miles low
+      "\U000F0874",#car miles full
+      "\U000F0B2A",#right
+      "\U000F04B9",#living room
+      "\U000F1061",#dining
+      "\U000F07F4",#tv
+      "\U000F1160",#kitchen
+      "\U000F0210",#fan
+      "\U000F050F",#temp
+      "\U000F1747",#tall lamp
+      "\U000F0769"]#ceiling
+
+
+  - file: "fonts/DSEG7Classic-Regular.ttf"
+    id: time_font
+    size: 58
+
+color:
+  - id: green
+    hex: '75D15F'
+  - id: red
+    hex: 'FF3131'
+  - id: blue
+    hex: '47B7E9'
+  - id: blue_drk
+    hex: '085296'
+  - id: amber
+    hex: 'FBAB35'
+  - id: lime
+    hex: '20FC30'
+  - id: pink
+    hex: 'D92BBC'
+  - id: yellow
+    hex: 'FFC000'
+  - id: black
+    hex: '000000'
+  - id: white
+    hex: 'ffffff'
+  - id: purple
+    hex: '73264D'
+        
+image:
+  - file: "watch2.png"
+    id: home
+    resize: 240x240
+    type: RGB24
+    
+  - file: "command.png"
+    id: command_img
+    resize: 240x240
+    type: RGB24
+
+  - file: "time.png"
+    id: time_img
+    resize: 240x240
+    type: RGB24
+
+display:
+  - platform: ili9xxx
+    model: ST7789V
+    id: screen
+    transform:
+      mirror_x: true
+      mirror_y: true
+      swap_xy: false
+    dimensions:
+      width: 240
+      height: 240
+      offset_width: 0
+      offset_height: 80
+    invert_colors: true
+    cs_pin: 12
+    dc_pin: 38
+    pages:
+      - id: home_page
+        lambda: |-
+          it.image(0, 0, id(time_img));
+          it.strftime(120, 155, id(my_font2), black, TextAlign::CENTER, "%A %d %b", id(rtc_time).now());
+          it.strftime(120, 105, id(time_font), black, TextAlign::CENTER, "%H:%M", id(rtc_time).now());
+          it.printf(110, 2, id(icon_font_25), black, "%s", id(wifi_connection) ?  "\U000F16BD" : "\U000F16BC");
+          it.printf(55, 2, id(icon_font_25), black, "%s", id(api_connection) ?  "\U000F07D0" : "\U000F087B");
+          it.printf(10, 2, id(icon_font_25), black, "\U000F0079");       
+          it.printf(120, 205, id(icon_font_25), black, TextAlign::CENTER, "\U000F12A8"); 
+          
+      - id: command_page
+        lambda: |-
+          it.image(0, 0, id(command_img));
+          it.strftime(120, 185, id(my_font2), black, TextAlign::CENTER, "%A %d %b", id(rtc_time).now());
+          it.strftime(120, 210, id(my_font3), black, TextAlign::CENTER, "%H:%M", id(rtc_time).now());
+          
+      - id: control_page
+        lambda: |-
+          it.fill(id(white));
+          it.printf(0, 0, id(icon_font_80), blue_drk, "\U000F1A12");
+          if(id(roller_cover).state) {
+                 it.printf(80, 0, id(icon_font_80), red, "\U000F12D4");
+          } else {                  
+                 it.printf(80, 0, id(icon_font_80), green,"\U000F12D3");
+          }
+          if(id(garage_bool).state) {
+                 it.printf(160, 0, id(icon_font_80), yellow, "\U000F04C8");
+          } else {
+                 it.printf(160, 0, id(icon_font_80), black, "\U000F04C8");
+          }
+            
+          if(id(alarmo).state == "disarmed") {
+            it.printf(0, 80, id(icon_font_80), red, "\U000F068A");
+          } else if(id(alarmo).state == "arming") {
+                  it.printf(0, 80, id(icon_font_80), amber, "\U000F099D");
+          } else if(id(alarmo).state == "armed_away") {
+                  it.printf(0, 80, id(icon_font_80), green, "\U000F099D");
+          }
+            if(id(therm).state == "heating") {
+                  it.printf(80, 80, id(icon_font_80), red, "\U000F0238");
+          } else {                  
+                  it.printf(80, 80, id(icon_font_80), blue, "\U000F0238");
+          } 
+          it.printf(160, 80, id(icon_font_80), blue_drk, "\U000F0B2A");  
+
+          if(id(garden_bool).state) {
+                 it.printf(0, 160, id(icon_font_80), yellow, "\U000F024A");
+          } else {
+                 it.printf(0, 160, id(icon_font_80), black, "\U000F024A");
+          }
+
+          if(id(shed_bool).state) {
+                 it.printf(160, 160, id(icon_font_80), yellow, "\U000F1322"); 
+          } else {
+                 it.printf(160, 160, id(icon_font_80), black, "\U000F1322"); 
+          }
+
+          if(id(drive_bool).state) {
+                 it.printf(80, 160, id(icon_font_80), yellow, "\U000F1987"); 
+          } else {
+                 it.printf(80, 160, id(icon_font_80), black, "\U000F1987"); 
+          }
+
+      - id: control2_page
+        lambda: |-
+          it.fill(id(white));
+          it.printf(0, 0, id(icon_font_80), blue_drk, "\U000F1A12");
+          if(id(living_bool).state) {
+                 it.printf(80, 0, id(icon_font_80), yellow, "\U000F04B9");
+          } else {                  
+                 it.printf(80, 0, id(icon_font_80), black, "\U000F04B9");
+          }
+          if(id(tv_bool).state) {
+                 it.printf(160, 0, id(icon_font_80), yellow, "\U000F07F4");
+          } else {
+                 it.printf(160, 0, id(icon_font_80), black, "\U000F07F4");
+          }
+                     
+          it.printf(0, 80, id(icon_font_80), blue_drk, "\U000F0B28");
+         
+          if(id(dining_bool).state) {
+                  it.printf(80, 80, id(icon_font_80), yellow, "\U000F1061");
+          } else {                  
+                  it.printf(80, 80, id(icon_font_80), black, "\U000F1061");
+          } 
+          if(id(kitch_bool).state) {                  
+                  it.printf(160, 80, id(icon_font_80), yellow, "\U000F0210");  
+          } else { 
+                  it.printf(160, 80, id(icon_font_80), black, "\U000F0210");
+          }
+          if(id(back_light_bool).state) {
+                 it.printf(0, 160, id(icon_font_80), yellow, "\U000F0769");
+          } else {
+                 it.printf(0, 160, id(icon_font_80), black, "\U000F0769");
+          }
+
+          if(id(tall_bool).state) {
+                 it.printf(160, 160, id(icon_font_80), yellow, "\U000F1747"); 
+          } else {
+                 it.printf(160, 160, id(icon_font_80), black, "\U000F1747"); 
+          }
+
+          if(id(fan_bool).state) {
+                 it.printf(80, 160, id(icon_font_80), yellow, "\U000F0210"); 
+          } else {
+                 it.printf(80, 160, id(icon_font_80), black, "\U000F0210"); 
+          }
+
+
+touchscreen:
+  - platform: ft63x6
+    interrupt_pin: 
+      number: GPIO16
+    address: 0x38
+    threshold: 200
+    display: screen
+    id: tscreen
+    i2c_id: tsc
+    calibration:
+      x_min: 0
+      x_max: 240
+      y_min: 0
+      y_max: 240
+    on_touch:
+      - light.turn_on: 
+          id: led
+          brightness: 50%
+
+binary_sensor:  
+#start voice assistant - issue command - double tap 
+  - platform: touchscreen
+    page_id: home_page
+    id: touch_talk
+    x_min: 0
+    x_max: 240
+    y_min: 0
+    y_max: 185
+    on_double_click:
+      min_length: 1ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - voice_assistant.start:
+        - display.page.show: command_page
+#home controls page button
+  - platform: touchscreen
+    page_id: home_page
+    id: controls
+    x_min: 0
+    x_max: 240
+    y_min: 186
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - display.page.show: control_page  
+#voice command page - double tap screen to return home
+  - platform: touchscreen
+    page_id: command_page
+    id: back_home
+    x_min: 0
+    x_max: 240
+    y_min: 0
+    y_max: 240
+    on_double_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - voice_assistant.stop
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - display.page.show: home_page
+         
+    
+##### control page #####
+
+#home screen button
+  - platform: touchscreen
+    page_id: control_page
+    id: cp1  
+    x_min: 0
+    x_max: 79
+    y_min: 0
+    y_max: 79
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - display.page.show: home_page
+
+#garage roller toggle
+  - platform: touchscreen
+    page_id: control_page
+    id: garage  
+    x_min: 80
+    x_max: 159
+    y_min: 0
+    y_max: 79
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - homeassistant.service:
+            service: input_boolean.toggle
+            data:
+              entity_id: input_boolean.garage_door
+#garage lights toggle
+  - platform: touchscreen
+    page_id: control_page
+    id: cp3 
+    x_min: 160
+    x_max: 240
+    y_min: 0
+    y_max: 79
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.workshop_light
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.garage
+#alarm set - no disarm - double tap to arm
+  - platform: touchscreen
+    page_id: control_page
+    id: cp4 
+    x_min: 0
+    x_max: 79
+    y_min: 80
+    y_max: 159
+    on_double_click:
+        min_length: 10ms
+        max_length: 500ms
+        then:
+          - light.turn_on: 
+              id: led
+              brightness: 50%
+          - homeassistant.service: 
+                service: alarm_control_panel.alarm_arm_away
+                data:
+                  entity_id: alarm_control_panel.alarmo 
+#heating toggle - pre-defined on and off temps
+  - platform: touchscreen
+    page_id: control_page
+    id: cp5 
+    x_min: 80  
+    x_max: 159
+    y_min: 80
+    y_max: 159
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - homeassistant.service:
+            service: input_boolean.toggle
+            data:
+              entity_id: input_boolean.heating_toggle
+#control2 page nav 
+  - platform: touchscreen
+    page_id: control_page
+    id: cp6  
+    x_min: 160
+    x_max: 240
+    y_min: 80
+    y_max: 159
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3 
+        - display.page.show: control2_page
+#back garden flood lights
+  - platform: touchscreen
+    page_id: control_page
+    id: cp7  
+    x_min: 0
+    x_max: 79
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.back_garden_sockets_s2
+#drive flood lights
+  - platform: touchscreen
+    page_id: control_page
+    id: cp8  
+    x_min: 80
+    x_max: 159
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.drive_sockets_s1
+#tool shed lights
+  - platform: touchscreen
+    page_id: control_page
+    id: cp9  
+    x_min: 160
+    x_max: 240
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.shed_light_esp_shed_light
+
+#home page nav
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp10
+    x_min: 0
+    x_max: 79
+    y_min: 0
+    y_max: 79
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - display.page.show: home_page
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+
+#living room scene
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp11 
+    x_min: 80
+    x_max: 159
+    y_min: 0
+    y_max: 79
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.living_room
+
+
+#tv ir on/off
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp12
+    x_min: 160
+    x_max: 240
+    y_min: 0
+    y_max: 79
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+
+
+#back to controls1
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp13
+    x_min: 0
+    x_max: 79
+    y_min: 80
+    y_max: 159
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - display.page.show: control_page
+
+#dining room
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp14
+    x_min: 80  
+    x_max: 159
+    y_min: 80
+    y_max: 159
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.dining_room_esp_dining_room_esp
+                     
+#cooker hood
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp15 
+    x_min: 160
+    x_max: 240
+    y_min: 80
+    y_max: 159
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.fan3
+
+#back room ceiling
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp16  
+    x_min: 0
+    x_max: 79
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then: 
+        - light.turn_on: 
+            id: led
+            brightness: 50%
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.back_room_esp
+
+# tall lamp
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp17 
+    x_min: 80
+    x_max: 159
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.spare_relay
+#back room fan
+  - platform: touchscreen
+    page_id: control2_page
+    id: cp18  
+    x_min: 160
+    x_max: 240
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+        - homeassistant.service:
+            service: switch.toggle
+            data:
+              entity_id: switch.sitting_room_s1
+### helper bools - not required update to binary states ##
+  - platform: homeassistant
+    id: drive_bool
+    entity_id: input_boolean.drive_lights_watch
+
+  - platform: homeassistant
+    id: garden_bool
+    entity_id: input_boolean.garden_light_watch
+
+  - platform: homeassistant
+    id: shed_bool
+    entity_id: input_boolean.shed_light_watch
+
+  - platform: homeassistant
+    id: garage_bool
+    entity_id: input_boolean.garage_lights_watch
+
+  - platform: homeassistant
+    id: roller_cover
+    entity_id: binary_sensor.alarm_panel_3esp_garage_roller
+
+
+  - platform: homeassistant
+    id: kitch_bool
+    entity_id: input_boolean.kitchen_watch
+
+  - platform: homeassistant
+    id: dining_bool
+    entity_id: input_boolean.dining_room_watch
+
+  - platform: homeassistant
+    id: living_bool
+    entity_id: input_boolean.living_room_watch
+
+  - platform: homeassistant
+    id: tall_bool
+    entity_id: input_boolean.tall_lamp_watch
+
+  - platform: homeassistant
+    id: fan_bool
+    entity_id: input_boolean.fan_watch
+
+  - platform: homeassistant
+    id: back_light_bool
+    entity_id: input_boolean.back_light_watch
+
+  - platform: homeassistant
+    id: tv_bool
+    entity_id: input_boolean.tv_on_off_watch
+
+text_sensor:
+  - platform: homeassistant
+    id: therm
+    entity_id: climate.house_thermostat
+    internal: true
+    attribute: hvac_action
+
+  - platform: homeassistant
+    id: alarmo
+    entity_id: alarm_control_panel.alarmo
+
+switch:
+#IR Tests - confirmed working
+  - platform: template
+    name: "Nad Power on"
+    turn_on_action:
+      remote_transmitter.transmit_nec:
+        address: 0x7C87
+        command: 0xDA25
+  - platform: template
+    name: "Nad Power off"
+    turn_on_action:
+      remote_transmitter.transmit_nec:
+        address: 0x7C87
+        command: 0x37C8
