@@ -80,7 +80,7 @@ i2c:
   - id: tsc
     sda: 39
     scl: 40
- 
+
 spi:
   - id: tft
     clk_pin: GPIO18
@@ -103,9 +103,7 @@ external_components:
       ref: main
     components: [ adf_pipeline, i2s_audio ]
     refresh: 0s  
-
 sensor:
-  
   - platform: homeassistant
     id: in_set_temp
     entity_id: climate.house_thermostat
@@ -122,6 +120,27 @@ sensor:
     entity_id: sensor.kitchen_temp_ble_temperature
     internal: true
  
+  - platform: homeassistant
+    id: car_bat
+    entity_id: sensor.kona_ev_battery_level
+    internal: true
+
+  - platform: homeassistant
+    id: car_dist
+    entity_id: sensor.kona_total_driving_range
+    internal: true
+
+  - platform: homeassistant
+    id: elec_cost
+    entity_id: sensor.octopus_energy_electricity_23e5066340_1410255970004_previous_accumulative_cost
+    internal: true
+
+  - platform: homeassistant
+    id: elec_kwh
+    entity_id: sensor.octopus_energy_electricity_23e5066340_1410255970004_current_demand
+    internal: true
+
+
   - platform: uptime
     name: Uptime Sensor
 
@@ -267,6 +286,7 @@ font:
       "\U000F07D0",#api connected
       "\U000F1247",
       "\U000F12A8",#touch button
+      "\U000F0EBA",#stats
       "\U000F087B"]#api disconnected
 
   - file: "fonts/materialdesignicons-webfont.ttf"
@@ -301,9 +321,13 @@ font:
       "\U000F1160",#kitchen
       "\U000F0210",#fan
       "\U000F050F",#temp
+      "\U000F01AE",#gbp pound symbol
       "\U000F1747",#tall lamp
       "\U000F0769"]#ceiling
-
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: icon_font_30
+    size: 30
+    glyphs: ["\U000F01AE"]
 
   - file: "fonts/DSEG7Classic-Regular.ttf"
     id: time_font
@@ -374,7 +398,8 @@ display:
           it.printf(110, 2, id(icon_font_25), black, "%s", id(wifi_connection) ?  "\U000F16BD" : "\U000F16BC");
           it.printf(55, 2, id(icon_font_25), black, "%s", id(api_connection) ?  "\U000F07D0" : "\U000F087B");
           it.printf(10, 2, id(icon_font_25), black, "\U000F0079");       
-          it.printf(120, 205, id(icon_font_25), black, TextAlign::CENTER, "\U000F12A8"); 
+          it.printf(80, 170, id(icon_font_25), blue_drk, "\U000F12A8"); 
+          it.printf(160, 170, id(icon_font_25), blue_drk, "\U000F0EBA"); 
           
       - id: command_page
         lambda: |-
@@ -434,7 +459,7 @@ display:
           it.fill(id(white));
           it.printf(0, 0, id(icon_font_80), blue_drk, "\U000F1A12");
           if(id(living_bool).state) {
-                 it.printf(80, 0, id(icon_font_80), yellow, "\U000F04B9");
+
           } else {                  
                  it.printf(80, 0, id(icon_font_80), black, "\U000F04B9");
           }
@@ -473,7 +498,36 @@ display:
           } else {
                  it.printf(80, 160, id(icon_font_80), black, "\U000F0210"); 
           }
+      - id: stats1_page
+        lambda: |-
+          it.fill(id(white));
 
+                 it.printf(5, 10, id(icon_font_80), black, "\U000F0B6C");
+                 it.printf(160, 55, id(my_font6), black, TextAlign::CENTER, "%.0f%%", id(car_bat).state);
+
+                 it.printf(5, 90, id(icon_font_80), black, "\U000F0874");
+                 it.printf(160, 135, id(my_font6), black, TextAlign::CENTER, "%.0f Mil", id(car_dist).state);
+
+                 it.printf(80, 160, id(icon_font_80), blue_drk, "\U000F0B2A");
+
+      
+      - id: stats2_page
+        lambda: |-
+          it.fill(id(white));
+
+                 it.printf(5, 10, id(icon_font_80), black, "\U000F192D");
+                 it.printf(160, 55, id(my_font6), black, TextAlign::CENTER, "%.0f", id(elec_cost).state); 
+
+                 it.printf(5, 90, id(icon_font_80), black, "\U000F192D");
+                 it.printf(160, 135, id(my_font6), black, TextAlign::CENTER, "%.0f", id(elec_kwh).state);
+                 
+                 it.printf(80, 160, id(icon_font_80), blue_drk, "\U000F1A12");
+                 it.printf(0, 160, id(icon_font_80), blue_drk, "\U000F0B28");
+
+
+      - id: sensor_page
+        lambda: |-
+          it.fill(id(blue));
 
 touchscreen:
   - platform: ft63x6
@@ -512,13 +566,14 @@ binary_sensor:
             brightness: 50%
         - voice_assistant.start:
         - display.page.show: command_page
-#home controls page button
+
+#sensor page
   - platform: touchscreen
     page_id: home_page
-    id: controls
+    id: hp1  
     x_min: 0
-    x_max: 240
-    y_min: 186
+    x_max: 79
+    y_min: 160
     y_max: 240
     on_click:
       min_length: 10ms
@@ -527,7 +582,41 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - display.page.show: control_page  
+
+#control page nav
+  - platform: touchscreen
+    page_id: home_page
+    id: hp2 
+    x_min: 80
+    x_max: 159
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - display.page.show: control_page
+
+# stats nav
+  - platform: touchscreen
+    page_id: home_page
+    id: hp3 
+    x_min: 160
+    x_max: 240
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - display.page.show: stats1_page
+
 #voice command page - double tap screen to return home
   - platform: touchscreen
     page_id: command_page
@@ -544,7 +633,6 @@ binary_sensor:
             id: led
             brightness: 50%
         - voice_assistant.stop
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - display.page.show: home_page
          
     
@@ -601,7 +689,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
@@ -663,7 +750,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3 
         - display.page.show: control2_page
 #back garden flood lights
   - platform: touchscreen
@@ -680,7 +766,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
@@ -700,7 +785,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50% 
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
@@ -720,7 +804,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50% 
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
@@ -742,7 +825,7 @@ binary_sensor:
             id: led
             brightness: 50% 
         - display.page.show: home_page
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+
 
 #living room scene
   - platform: touchscreen
@@ -780,7 +863,7 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
+
 
 
 #back to controls1
@@ -798,7 +881,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - display.page.show: control_page
 
 #dining room
@@ -836,7 +918,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
@@ -857,7 +938,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50%
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
@@ -878,7 +958,6 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50% 
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
@@ -898,11 +977,62 @@ binary_sensor:
         - light.turn_on: 
             id: led
             brightness: 50% 
-        - media_player.play_media: http://192.168.1.8:8123/local/vad.mp3
         - homeassistant.service:
             service: switch.toggle
             data:
               entity_id: switch.sitting_room_s1
+# stats1 next nav
+  - platform: touchscreen
+    page_id: stats1_page
+    id: stat_nav_next 
+    x_min: 80
+    x_max: 159
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - display.page.show: stats2_page
+# stats 2 home
+  - platform: touchscreen
+    page_id: stats2_page
+    id: stat_nav_home 
+    x_min: 160
+    x_max: 240
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - display.page.show: home_page
+
+# stats 2 home
+  - platform: touchscreen
+    page_id: stats2_page
+    id: stat_nav_back 
+    x_min: 0
+    x_max: 79
+    y_min: 160
+    y_max: 240
+    on_click:
+      min_length: 10ms
+      max_length: 500ms
+      then:
+        - light.turn_on: 
+            id: led
+            brightness: 50% 
+        - display.page.show: stats1_page
+
+
+  
 ### helper bools - not required update to binary states ##
   - platform: homeassistant
     id: drive_bool
